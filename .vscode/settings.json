@@ -1,0 +1,18 @@
+{
+    "git.ignoreLegacyWarning": true,
+    "files.autoSave": "afterDelay",
+    "files.exclude": {
+        ".vscode": true,
+        "**/*.o": true,
+        "repo.txt":true,
+        ".gitignore":true
+    },
+    "editor.renderControlCharacters": true,
+    "C_Cpp.default.cStandard": "c99",
+    "C_Cpp.default.cppStandard": "gnu++11",
+    "C_Cpp.default.defines": [],
+    "C_Cpp.intelliSenseEngine": "Disabled",
+    "C_Cpp.workspaceParsingPriority": "low",
+    "C_Cpp.intelliSenseCacheSize": 100,
+    "C_Cpp.default.browse.limitSymbolsToIncludedHeaders": true
+}
