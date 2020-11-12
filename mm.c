@@ -24,11 +24,11 @@
  ********************************************************/
 team_t team = {
     /* bu username : eg. jappavoo */
-    "bu username : in",
+    "in",
     /* full name : eg. jonathan appavoo */
-    "full name : ivan nikitovic",
+    "ivan nikitovic",
     /* email address : jappavoo@bu.edu */
-    "email address : in@bu.edu",
+    "in@bu.edu",
     "",
     ""
 };
