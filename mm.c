@@ -98,18 +98,19 @@ int main(int argc, char **argv)
 int mm_init(void)
 {
     // printf("Initializing heap starting at: %p\n", extend_heap(32));
-    // printf("Start: %p\n", mem_heap_lo());
-    // printf("End: %p\n", mem_heap_hi());
+    printf("Heap initialized at: %p\n", mem_heap_lo());
+    
     // printf("Heap size: %d bytes\n", mem_heapsize());
     // printf("Checking heap size... %s\n", (mem_heapsize() == 32 * WSIZE) ? "PASS" : "FAIL");
 
     /* Create the initial empty heap */
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1) //line:vm:mm:begininit
         return -1;
+    buckets_init(BUCKETS_COUNT, (int *) (heap_listp));
+    heap_listp += (BUCKETS_COUNT*WSIZE);  
+
     PUT(heap_listp, 0);                          /* Alignment padding */
     printf("Found %d at %p\n", GET(heap_listp), heap_listp);
-    buckets_init(BUCKETS_COUNT, (int *) (heap_listp + WSIZE));
-    heap_listp += (BUCKETS_COUNT*WSIZE);  
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */ 
     printf("Found %d at %p\n", GET(heap_listp + 1 * WSIZE), heap_listp + 1 * WSIZE);  
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */ 
@@ -126,6 +127,23 @@ int mm_init(void)
     return 0;
 }
 
+/*
+ * buckets_init - Initializes buckets_count buckets at beginning of heap
+ * buckets store addresses to head nodes of free linked lists
+ * Bucket boundaries are organized as such (ranges inclusive, in bytes):
+ *
+ * 0x0 : 1
+ * 0x4 : 2 
+ * 0x8 : 3 - 4
+ * 0x12: 5 - 8
+ * 0x16: 9 - 16
+ * 0x20: 17 - 32
+ *
+ * IMPORTANT NOTE: the bucket ranges are in total free bytes,
+ *                 to find a fit for payload size x:
+ *                 BUCKET.LOW <= x + 2 <= BUCKET.HIGH
+ *                 the 2 represent header and footer of allocated block
+ */
 static void buckets_init(unsigned int buckets_count, int *starting_position) {
     //buckets_count += ALIGNMENT - buckets_count % ALIGNMENT; // aligns buckets to keep alignment of heap
     // printf("Classes required: %d\n", buckets_count);
@@ -148,17 +166,17 @@ static void *extend_heap(size_t words)
     size_t size;
 
     /* Allocate an even number of words to maintain alignment */
-    size = (words % 2) ? (words+1) * WSIZE : words * WSIZE; //line:vm:mm:beginextend
+    size = (words % 2) ? (words+1) * WSIZE : words * WSIZE; 
     if ((long)(bp = mem_sbrk(size)) == -1)  
-        return NULL;                                        //line:vm:mm:endextend
+        return NULL;                      
 
     /* Initialize free block header/footer and the epilogue header */
-    PUT(HDRP(bp), PACK(size, 0));         /* Free block header */   //line:vm:mm:freeblockhdr
-    PUT(FTRP(bp), PACK(size, 0));         /* Free block footer */   //line:vm:mm:freeblockftr
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /* New epilogue header */ //line:vm:mm:newepihdr
+    PUT(HDRP(bp), PACK(size, 0));         /* Free block header */  
+    PUT(FTRP(bp), PACK(size, 0));         /* Free block footer */  
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /* New epilogue header */ 
 
     /* Coalesce if the previous block was free */
-    return coalesce(bp);                                          //line:vm:mm:returnblock
+    return coalesce(bp);                         
 }
 
 /* 
