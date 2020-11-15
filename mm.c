@@ -76,6 +76,10 @@ team_t team = {
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void buckets_init(unsigned int buckets_count, int *starting_position);
+static void add_to_bucket(void *ptr);
+static void remove_from_bucket(void *ptr);
+static void *find_bucket(size_t words);
+// static void *find_fit(size_t asize);
 
 // static char *rover;
 static char *heap_listp = 0;
@@ -86,6 +90,7 @@ int main(int argc, char **argv)
 {
   mem_init();
   mm_init();
+  find_bucket(31);
   //printf("mm_malloc=%p\n", mm_malloc(4088));
   return 0;
 }
@@ -132,12 +137,12 @@ int mm_init(void)
  * buckets store addresses to head nodes of free linked lists
  * Bucket boundaries are organized as such (ranges inclusive, in bytes):
  *
- * 0x0 : 1
- * 0x4 : 2 
- * 0x8 : 3 - 4
- * 0x12: 5 - 8
- * 0x16: 9 - 16
- * 0x20: 17 - 32
+ * 0x0 : 1        k: 0
+ * 0x4 : 2        k: 1
+ * 0x8 : 3 - 4    k: 2
+ * 0x12: 5 - 8    k: 3
+ * 0x16: 9 - 16   k: 4
+ * 0x20: 17 - 32  k: 5
  *
  * IMPORTANT NOTE: the bucket ranges are in total free bytes,
  *                 to find a fit for payload size x:
@@ -150,10 +155,11 @@ static void buckets_init(unsigned int buckets_count, int *starting_position) {
 
     // initialize bucket array
     int *bucket = starting_position; // initializes bucket array to start of heap
-    while (bucket < starting_position + WSIZE * buckets_count) {
-      *bucket = ~0; // -1 means bucket is empty
-      printf("Assigned %p at %p\n", GET(bucket), bucket);
+    while (buckets_count != 0) {
+      *bucket = 0; // 0 means bucket is empty
+      printf("Assigned %d at %p\n", GET(bucket), bucket);
       bucket++;
+      buckets_count--;
     }
 }
 
@@ -195,6 +201,21 @@ void *mm_malloc(size_t size)
         return (void *)((char *)p + SIZE_T_SIZE);
     }
 }
+ /*
+  * find_bucket - iterates over buckets array to find smallest bucket
+  */
+static void *find_bucket(size_t words) {
+  size_t newsize = ALIGN(words + SIZE_T_SIZE);
+  // printf("Looking for size %d...\n", newsize);
+  int k;
+  for (k = 0; k < BUCKETS_COUNT; k++) {
+    if (words < (1 << k)) {
+      // printf("k found: %d (%p)\n", k, (int *) mem_heap_lo() + k);
+      return (int *) mem_heap_lo() + k;
+    }
+  }
+  return 0;
+}
 
 /*
  * mm_free - Freeing a block does nothing.
@@ -205,10 +226,39 @@ void mm_free(void *ptr)
 
 /*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
+ * Implementation partially taken from CS:APP
  */
-static void *coalesce(void *ptr) {
-  return ptr;
-} 
+static void *coalesce(void *bp)
+{
+	size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp))); 
+	size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp))); 
+	size_t size = GET_SIZE(HDRP(bp));
+
+	if(prev_alloc && next_alloc) {			/* Case 1 */
+		return bp;
+	}
+
+	else if (prev_alloc && ! next_alloc) {		/* Case 2 */
+		size += GET_SIZE(HDRP(NEXT_BLKP(bp))); 
+		PUT(HDRP(bp), PACK(size, 0)); 
+		PUT(FTRP(bp), PACK(size, 0));
+	}
+
+	else if (!prev_alloc && next_alloc) {		/* Case 3 */
+		size += GET_SIZE(HDRP(PREV_BLKP(bp))); 
+		PUT(FTRP(bp), PACK(size, 0)); 
+		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
+		bp = PREV_BLKP(bp);
+	}
+
+	else {						/* Case 4 */ 
+		size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp))); 
+		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
+		PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
+		bp = PREV_BLKP(bp); 
+	} 
+	return bp;
+}
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
