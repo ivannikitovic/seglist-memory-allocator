@@ -34,13 +34,16 @@ team_t team = {
 };
 
 /* Basic constants and macros */
+/* Definitions taken fro CS:APP */
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
 #define WSIZE       4       /* Word and header/footer size (bytes) */ 
 #define DSIZE       8       /* Double word size (bytes) */
-#define CHUNKSIZE  (1<<12)  /* Extend heap by this amount (bytes) */ 
+#define CHUNKSIZE  (1<<12)  /* Extend heap by this amount (bytes) */
+
+#define BUCKETS_COUNT 32
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -72,8 +75,10 @@ team_t team = {
 /* Function prototypes for internal helper routines */
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
+static void buckets_init(unsigned int buckets_count, int *starting_position);
 
-static char *rover;
+// static char *rover;
+static char *heap_listp = 0;
 
 // gcc -D MY_MMTEST -Wall -g -m32 mm.c memlib.c -o mymem
 #ifdef MY_MMTEST
@@ -88,16 +93,50 @@ int main(int argc, char **argv)
 
 /* 
  * mm_init - initialize the malloc package.
+ * Implementation partially taken from CS:APP
  */
 int mm_init(void)
 {
-    printf("Initializing heap starting at: %p\n", extend_heap(32));
-    printf("Start: %p\n", mem_heap_lo());
-    printf("End: %p\n", mem_heap_hi());
-    printf("Heap size: %d bytes\n", mem_heapsize());
-    printf("Checking heap size... %s\n", (mem_heapsize() == 32 * WSIZE) ? "PASS" : "FAIL");
+    // printf("Initializing heap starting at: %p\n", extend_heap(32));
+    // printf("Start: %p\n", mem_heap_lo());
+    // printf("End: %p\n", mem_heap_hi());
+    // printf("Heap size: %d bytes\n", mem_heapsize());
+    // printf("Checking heap size... %s\n", (mem_heapsize() == 32 * WSIZE) ? "PASS" : "FAIL");
+
+    /* Create the initial empty heap */
+    if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1) //line:vm:mm:begininit
+        return -1;
+    PUT(heap_listp, 0);                          /* Alignment padding */
+    printf("Found %d at %p\n", GET(heap_listp), heap_listp);
+    buckets_init(BUCKETS_COUNT, (int *) (heap_listp + WSIZE));
+    heap_listp += (BUCKETS_COUNT*WSIZE);  
+    PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */ 
+    printf("Found %d at %p\n", GET(heap_listp + 1 * WSIZE), heap_listp + 1 * WSIZE);  
+    PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */ 
+    printf("Found %d at %p\n", GET(heap_listp + 2 * WSIZE), heap_listp + 2 * WSIZE);  
+    PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
+    printf("Found %d at %p\n", GET(heap_listp + 3 * WSIZE), heap_listp + 3 * WSIZE);  
+    heap_listp += (2*WSIZE);
+    printf("Found %d at heap_listp (%p)\n", GET(heap_listp), heap_listp);  
+
+    /* Extend the empty heap with a free block of CHUNKSIZE bytes */
+    if (extend_heap(CHUNKSIZE/WSIZE) == NULL) 
+        return -1;
 
     return 0;
+}
+
+static void buckets_init(unsigned int buckets_count, int *starting_position) {
+    //buckets_count += ALIGNMENT - buckets_count % ALIGNMENT; // aligns buckets to keep alignment of heap
+    // printf("Classes required: %d\n", buckets_count);
+
+    // initialize bucket array
+    int *bucket = starting_position; // initializes bucket array to start of heap
+    while (bucket < starting_position + WSIZE * buckets_count) {
+      *bucket = ~0; // -1 means bucket is empty
+      printf("Assigned %p at %p\n", GET(bucket), bucket);
+      bucket++;
+    }
 }
 
 /* 
