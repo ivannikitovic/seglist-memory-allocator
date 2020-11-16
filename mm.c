@@ -76,9 +76,10 @@ team_t team = {
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void buckets_init(unsigned int buckets_count, int *starting_position);
-static void add_to_bucket(void *ptr);
+static void add_to_bucket(void *ptr); // largest first or not (this algorithm is linear time)
 static void remove_from_bucket(void *ptr);
 static void *find_bucket(size_t words);
+static void *find_fit(size_t words);
 // static void *find_fit(size_t asize);
 
 // static char *rover;
@@ -91,6 +92,7 @@ int main(int argc, char **argv)
   mem_init();
   mm_init();
   find_bucket(31);
+  printf("%d\n", find_fit(30));
   //printf("mm_malloc=%p\n", mm_malloc(4088));
   return 0;
 }
@@ -201,11 +203,11 @@ void *mm_malloc(size_t size)
         return (void *)((char *)p + SIZE_T_SIZE);
     }
 }
- /*
-  * find_bucket - iterates over buckets array to find smallest bucket
-  */
+/*
+ * find_bucket - iterates over buckets array to find smallest bucket
+ */
 static void *find_bucket(size_t words) {
-  size_t newsize = ALIGN(words + SIZE_T_SIZE);
+  // size_t newsize = ALIGN(words + SIZE_T_SIZE);
   // printf("Looking for size %d...\n", newsize);
   int k;
   for (k = 0; k < BUCKETS_COUNT; k++) {
@@ -215,6 +217,29 @@ static void *find_bucket(size_t words) {
     }
   }
   return 0;
+}
+
+/*
+ * find_fit - checks first node (biggest) inside a given bucket
+ *            returns pointer to free list
+ *            2 possible algorithms:
+ *            I  Linked list is ranked starting largest
+ *            II First-fit which could be slow for large requests
+ *            *  Splitting optional, would decrease internal fragmentation
+ */
+static void *find_fit(size_t words) {
+  size_t newsize = ALIGN(words + SIZE_T_SIZE);
+  int *bucket = (int *) find_bucket(newsize);
+  int *node = bucket;
+  while (bucket < (int *) mem_heap_lo() + 32) {
+
+    if (newsize <= GET_SIZE(node)) {
+      return node; // no splitting done, splitting needed either here or helper function
+    } // since first node is largest (I), move up bucket:
+    
+    bucket++;
+  }
+  return 0; // no fit found
 }
 
 /*
