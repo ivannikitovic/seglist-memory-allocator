@@ -76,11 +76,13 @@ team_t team = {
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void buckets_init(unsigned int buckets_count, size_t *starting_position);
-static void add_to_bucket(size_t *block, size_t *bucket); // largest first or not (this algorithm is linear time)
+static void add_to_bucket(size_t *block, size_t *bucket);
+static void add_to_seglist(size_t *ptr);
 //static void remove_from_bucket(void *ptr);
 static void *find_bucket(size_t words);
 static void print_heap();
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket);
+static size_t *remove_from_seglist(size_t *ptr);
 //static void *find_fit(size_t words);
 // static void *find_fit(size_t asize);
 
@@ -104,9 +106,9 @@ int main(int argc, char **argv)
   void *ptr3 = extend_heap(CHUNKSIZE/WSIZE);
   mm_free(ptr3);
 
-  remove_from_bucket(ptr1, find_bucket(CHUNKSIZE/WSIZE));
-  remove_from_bucket(ptr2, find_bucket(CHUNKSIZE/WSIZE));
-  remove_from_bucket(ptr3, find_bucket(CHUNKSIZE/WSIZE));
+  //remove_from_seglist(ptr1);
+  //remove_from_seglist(ptr2);
+  //remove_from_seglist(ptr3);
     
   print_heap();
 
@@ -282,8 +284,8 @@ void mm_free(void *ptr)
   PUT(HDRP(ptr), PACK(size, 0));
   PUT(FTRP(ptr), PACK(size, 0));
 
-  add_to_bucket(ptr, find_bucket(size / WSIZE));
-  //coalesce(bp);
+  //ptr = coalesce(ptr);
+  add_to_seglist(ptr);
 }
 
 /*
@@ -332,6 +334,11 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   //printf("Bucket content: %p\n", *bucket);
 }
 
+static void add_to_seglist(size_t *ptr) {
+  size_t size = GET_SIZE(HDRP(ptr));
+  add_to_bucket(ptr, find_bucket(size / WSIZE));
+}
+
 /*
  * remove_from_bucket - helper method that removes and returns free block from bucket
  */
@@ -356,10 +363,15 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
 
 }
 
+static size_t *remove_from_seglist(size_t *ptr) {
+  size_t size = GET_SIZE(HDRP(ptr));
+  remove_from_bucket(ptr, find_bucket(size / WSIZE));
+}
+
 /*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
  * Implementation partially taken from CS:APP
- * handles rearangement of blocks
+ * removes free blocks from lists as it coalesces
  */
 static void *coalesce(void *bp)
 {
@@ -372,19 +384,26 @@ static void *coalesce(void *bp)
 	}
 
 	else if (prev_alloc && ! next_alloc) {		/* Case 2 */
-		size += GET_SIZE(HDRP(NEXT_BLKP(bp))); 
+    remove_from_seglist( NEXT_BLKP(bp) );
+
+		size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
 		PUT(HDRP(bp), PACK(size, 0)); 
 		PUT(FTRP(bp), PACK(size, 0));
 	}
 
 	else if (!prev_alloc && next_alloc) {		/* Case 3 */
-		size += GET_SIZE(HDRP(PREV_BLKP(bp))); 
+    remove_from_seglist( PREV_BLKP(bp) );
+
+		size += GET_SIZE(HDRP(PREV_BLKP(bp)));
 		PUT(FTRP(bp), PACK(size, 0)); 
 		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
 		bp = PREV_BLKP(bp);
 	}
 
 	else {						/* Case 4 */ 
+    remove_from_seglist( NEXT_BLKP(bp) );
+    remove_from_seglist( PREV_BLKP(bp) );
+
 		size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp))); 
 		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
 		PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
