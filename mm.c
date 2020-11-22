@@ -78,15 +78,12 @@ static void *coalesce(void *bp);
 static void buckets_init(unsigned int buckets_count, size_t *starting_position);
 static void add_to_bucket(size_t *block, size_t *bucket);
 static void add_to_seglist(size_t *ptr);
-//static void remove_from_bucket(void *ptr);
 static void *find_bucket(size_t words);
 static void print_heap();
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket);
 static size_t *remove_from_seglist(size_t *ptr);
-//static void *find_fit(size_t words);
-// static void *find_fit(size_t asize);
+static void *find_fit(size_t words);
 
-// static char *rover;
 static char *heap_listp = 0;
 
 // gcc -D MY_MMTEST -Wall -g -m32 mm.c memlib.c -o mymem
@@ -96,16 +93,19 @@ int main(int argc, char **argv)
   mem_init();
   mm_init();
 
+  printf("FIT FOUND: %p\n", find_fit(13));
+
   void *ptr1 = extend_heap(CHUNKSIZE/WSIZE);
+  printf("FIT FOUND: %p\n", find_fit(13));
 
   //mm_free(ptr1);
 
-  void *ptr2 = extend_heap(CHUNKSIZE/WSIZE);
+  //void *ptr2 = extend_heap(CHUNKSIZE/WSIZE);
 
   //mm_free(ptr2);
   //remove_from_bucket(ptr2, find_bucket(CHUNKSIZE/WSIZE));
 
-  void *ptr3 = extend_heap(CHUNKSIZE/WSIZE);
+  //void *ptr3 = extend_heap(CHUNKSIZE/WSIZE);
 
   //mm_free(ptr3);
 
@@ -263,14 +263,21 @@ static void *find_bucket(size_t words) {
  *            *  Splitting optional, would decrease internal fragmentation
  */
 static void *find_fit(size_t words) {
-  size_t newsize = ALIGN(words + SIZE_T_SIZE);
+  size_t *node;
+  size_t newsize = words + 4; // payload + padding + header + footer, in words
   size_t *bucket = (size_t *) find_bucket(newsize);
-  size_t *node = bucket; // is this right?
-  while (bucket < (size_t *) mem_heap_lo() + 32) {
+  while (bucket < (size_t *) mem_heap_lo() + BUCKETS_COUNT) {
+    node = *bucket;
 
-    if (newsize <= GET_SIZE(node)) {
-      return node; // no splitting done, splitting needed either here or helper function
-    } // since first node is largest (I), move up bucket:
+    while (node != 0x0) {
+      // printf("newsize: %d\n", newsize);
+      // printf("node: %p\n", node);
+      // printf("getsize: %d\n", GET_SIZE(HDRP(node)));
+      if (newsize <= GET_SIZE(HDRP(node))) {
+        return node; // no splitting done, splitting could either here or helper function
+      }
+      node = *node;
+    };
     
     bucket++;
   }
@@ -323,10 +330,6 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
     *bucket = block_ptr;
     //*(block_ptr + 1) = bucket;
   } else { // else, bucket has blocks already, place at beginning
-
-    // while ((node + 1) != 0x0) {
-    //   node = *(node + 1);
-    // } // reached leaf node good for first firt fit algo
 
     //*(block_ptr + 1) = node;
     *(node + 1) = block_ptr;
