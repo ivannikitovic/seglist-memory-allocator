@@ -41,7 +41,7 @@ team_t team = {
 
 #define WSIZE       4       /* Word and header/footer size (bytes) */ 
 #define DSIZE       8       /* Double word size (bytes) */
-#define CHUNKSIZE  (1<<12)  /* Extend heap by this amount (bytes) */
+#define CHUNKSIZE  (1<<9)  /* Extend heap by this amount (bytes) */ // CHANGE TO 12
 
 #define BUCKETS_COUNT 32
 
@@ -75,11 +75,12 @@ team_t team = {
 /* Function prototypes for internal helper routines */
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
-static void buckets_init(unsigned int buckets_count, int *starting_position);
-static void add_to_bucket(void *ptr); // largest first or not (this algorithm is linear time)
-static void remove_from_bucket(void *ptr);
+static void buckets_init(unsigned int buckets_count, size_t *starting_position);
+static void add_to_bucket(size_t *block, size_t *bucket); // largest first or not (this algorithm is linear time)
+//static void remove_from_bucket(void *ptr);
 static void *find_bucket(size_t words);
-static void *find_fit(size_t words);
+static void print_heap();
+//static void *find_fit(size_t words);
 // static void *find_fit(size_t asize);
 
 // static char *rover;
@@ -92,7 +93,12 @@ int main(int argc, char **argv)
   mem_init();
   mm_init();
   find_bucket(31);
-  printf("%d\n", find_fit(30));
+  add_to_bucket((size_t *) (heap_listp + 4), find_bucket((1<<9) / WSIZE));
+  add_to_bucket((size_t *) extend_heap(512/WSIZE) - 1, find_bucket((1<<9) / WSIZE));
+  
+  print_heap();
+
+  printf("%p\n", heap_listp + WSIZE);
   //printf("mm_malloc=%p\n", mm_malloc(4088));
   return 0;
 }
@@ -113,7 +119,7 @@ int mm_init(void)
     /* Create the initial empty heap */
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1) //line:vm:mm:begininit
         return -1;
-    buckets_init(BUCKETS_COUNT, (int *) (heap_listp));
+    buckets_init(BUCKETS_COUNT, (size_t *) (heap_listp));
     heap_listp += (BUCKETS_COUNT*WSIZE);  
 
     PUT(heap_listp, 0);                          /* Alignment padding */
@@ -123,7 +129,7 @@ int mm_init(void)
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */ 
     printf("Found %d at %p\n", GET(heap_listp + 2 * WSIZE), heap_listp + 2 * WSIZE);  
     PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
-    printf("Found %d at %p\n", GET(heap_listp + 3 * WSIZE), heap_listp + 3 * WSIZE);  
+    //printf("Found %d at %p\n", GET(heap_listp + 3 * WSIZE), heap_listp + 3 * WSIZE);  
     heap_listp += (2*WSIZE);
     printf("Found %d at heap_listp (%p)\n", GET(heap_listp), heap_listp);  
 
@@ -132,6 +138,16 @@ int mm_init(void)
         return -1;
 
     return 0;
+}
+
+static void print_heap() {
+  size_t *current_word = mem_heap_lo();
+  while (current_word <= mem_heap_hi()) {
+    printf("             --------------\n");
+    printf("%p  |  0x%x\n", current_word, *current_word);
+    printf("             --------------\n");
+    current_word++;
+  }
 }
 
 /*
@@ -148,15 +164,16 @@ int mm_init(void)
  *
  * IMPORTANT NOTE: the bucket ranges are in total free bytes,
  *                 to find a fit for payload size x:
- *                 BUCKET.LOW <= x + 2 <= BUCKET.HIGH
- *                 the 2 represent header and footer of allocated block
+ *                 BUCKET.LOW <= x + 4 <= BUCKET.HIGH
+ *                 the 4 represent header, footer, next, and padding of allocated block
  */
-static void buckets_init(unsigned int buckets_count, int *starting_position) {
+static void buckets_init(unsigned int buckets_count, size_t *starting_position) {
+    mem_sbrk(WSIZE * BUCKETS_COUNT); // makes room for buckets
     //buckets_count += ALIGNMENT - buckets_count % ALIGNMENT; // aligns buckets to keep alignment of heap
     // printf("Classes required: %d\n", buckets_count);
 
     // initialize bucket array
-    int *bucket = starting_position; // initializes bucket array to start of heap
+    size_t *bucket = starting_position; // initializes bucket array to start of heap
     while (buckets_count != 0) {
       *bucket = 0; // 0 means bucket is empty
       printf("Assigned %d at %p\n", GET(bucket), bucket);
@@ -184,7 +201,9 @@ static void *extend_heap(size_t words)
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /* New epilogue header */ 
 
     /* Coalesce if the previous block was free */
-    return coalesce(bp);                         
+    //return coalesce(bp);
+    printf("THE BLOCK POINTER;%p\n", bp);   
+    return bp;                      
 }
 
 /* 
@@ -211,9 +230,9 @@ static void *find_bucket(size_t words) {
   // printf("Looking for size %d...\n", newsize);
   int k;
   for (k = 0; k < BUCKETS_COUNT; k++) {
-    if (words < (1 << k)) {
+    if (words * WSIZE <= (1 << k)) {
       // printf("k found: %d (%p)\n", k, (int *) mem_heap_lo() + k);
-      return (int *) mem_heap_lo() + k;
+      return (size_t *) mem_heap_lo() + k;
     }
   }
   return 0;
@@ -229,9 +248,9 @@ static void *find_bucket(size_t words) {
  */
 static void *find_fit(size_t words) {
   size_t newsize = ALIGN(words + SIZE_T_SIZE);
-  int *bucket = (int *) find_bucket(newsize);
-  int *node = bucket;
-  while (bucket < (int *) mem_heap_lo() + 32) {
+  size_t *bucket = (size_t *) find_bucket(newsize);
+  size_t *node = bucket; // is this right?
+  while (bucket < (size_t *) mem_heap_lo() + 32) {
 
     if (newsize <= GET_SIZE(node)) {
       return node; // no splitting done, splitting needed either here or helper function
@@ -250,8 +269,51 @@ void mm_free(void *ptr)
 }
 
 /*
+ * add_to_bucket - traverses over linked list and places block
+ *                 (so that it keep order max to min)
+ *
+ *  ______________
+ * | size | alloc |
+ * |    HEADER    |
+ * ----------------
+ * |    *next     |  -  0x0 if end of list
+ * |              |
+ * ----------------
+ * |              |
+ * |              |
+ * |   PAYLOAD    |
+ * |              |
+ * ----------------
+ * |              |
+ * |   PADDING    |
+ * ----------------
+ * | size | alloc |  
+ * |    FOOTER    |
+ * ----------------
+ */
+static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
+  size_t *node = (size_t *) *bucket; // node is now address of first free block, if exists; 
+  printf("Address of head node: %d\n", node);
+  
+  if (node == 0x0) { // bucket empty, set bucket content to block_ptr
+    *bucket = block_ptr;
+  } else { // else, bucket has blocks already, place at beginning
+
+    // while ((node + 1) != 0x0) {
+    //   node = *(node + 1);
+    // } // reached leaf node
+
+    *(block_ptr + 1) = node;
+    *bucket = block_ptr;
+
+  }
+  printf("Bucket content: %p\n", *bucket);
+}
+
+/*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
  * Implementation partially taken from CS:APP
+ * new placement of bucket required
  */
 static void *coalesce(void *bp)
 {
