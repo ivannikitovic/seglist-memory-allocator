@@ -96,15 +96,18 @@ int main(int argc, char **argv)
   mem_init();
   mm_init();
 
-  void *ptr1 = (size_t *) (heap_listp + 2*WSIZE);
-  mm_free(ptr1);
+  void *ptr1 = extend_heap(CHUNKSIZE/WSIZE);
+
+  //mm_free(ptr1);
 
   void *ptr2 = extend_heap(CHUNKSIZE/WSIZE);
-  mm_free(ptr2);
+
+  //mm_free(ptr2);
   //remove_from_bucket(ptr2, find_bucket(CHUNKSIZE/WSIZE));
 
   void *ptr3 = extend_heap(CHUNKSIZE/WSIZE);
-  mm_free(ptr3);
+
+  //mm_free(ptr3);
 
   //remove_from_seglist(ptr1);
   //remove_from_seglist(ptr2);
@@ -215,8 +218,8 @@ static void *extend_heap(size_t words)
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /* New epilogue header */ 
 
     /* Coalesce if the previous block was free */
-    //return coalesce(bp);
-    return bp;                      
+    return coalesce(bp);
+    //return bp;                      
 }
 
 /* 
@@ -284,8 +287,8 @@ void mm_free(void *ptr)
   PUT(HDRP(ptr), PACK(size, 0));
   PUT(FTRP(ptr), PACK(size, 0));
 
-  //ptr = coalesce(ptr);
-  add_to_seglist(ptr);
+  coalesce(ptr);
+  //add_to_seglist(ptr);
 }
 
 /*
@@ -355,8 +358,10 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
 
   } else { // Case 2: all other cases
     node = *(block_ptr + 1); // node is prev
-    *node = *block_ptr; // asign previous to point to next
-    node2 = *node; // asigns node2 to next
+    if (node != 0x0) {
+      *node = *block_ptr; // asign previous to point to next
+      node2 = *node; // asigns node2 to next
+    }
     if (node2 != 0x0)
       *(node2 + 1) = node; // connects next to back
   }
@@ -380,34 +385,44 @@ static void *coalesce(void *bp)
 	size_t size = GET_SIZE(HDRP(bp));
 
 	if(prev_alloc && next_alloc) {			/* Case 1 */
+    add_to_seglist(bp);
 		return bp;
 	}
 
 	else if (prev_alloc && ! next_alloc) {		/* Case 2 */
+		size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+
     remove_from_seglist( NEXT_BLKP(bp) );
 
-		size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
 		PUT(HDRP(bp), PACK(size, 0)); 
 		PUT(FTRP(bp), PACK(size, 0));
+
+    add_to_seglist(bp);
 	}
 
 	else if (!prev_alloc && next_alloc) {		/* Case 3 */
+		size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+
     remove_from_seglist( PREV_BLKP(bp) );
 
-		size += GET_SIZE(HDRP(PREV_BLKP(bp)));
 		PUT(FTRP(bp), PACK(size, 0)); 
 		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
 		bp = PREV_BLKP(bp);
+
+    add_to_seglist(bp);
 	}
 
 	else {						/* Case 4 */ 
+		size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp))); 
+
     remove_from_seglist( NEXT_BLKP(bp) );
     remove_from_seglist( PREV_BLKP(bp) );
 
-		size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp))); 
 		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
 		PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
 		bp = PREV_BLKP(bp); 
+
+    add_to_seglist(bp);
 	} 
 	return bp;
 }
