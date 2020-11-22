@@ -41,7 +41,7 @@ team_t team = {
 
 #define WSIZE       4       /* Word and header/footer size (bytes) */ 
 #define DSIZE       8       /* Double word size (bytes) */
-#define CHUNKSIZE  (1<<9)  /* Extend heap by this amount (bytes) */ // CHANGE TO 12
+#define CHUNKSIZE  (1<<6)  /* Extend heap by this amount (bytes) */ // CHANGE TO 12
 
 #define BUCKETS_COUNT 32
 
@@ -92,9 +92,11 @@ int main(int argc, char **argv)
 {
   mem_init();
   mm_init();
-  find_bucket(31);
-  add_to_bucket((size_t *) (heap_listp + 4), find_bucket((1<<9) / WSIZE));
-  add_to_bucket((size_t *) extend_heap(512/WSIZE) - 1, find_bucket((1<<9) / WSIZE));
+
+  mm_free((size_t *) (heap_listp + 2*WSIZE));
+
+  void *ptr = extend_heap(CHUNKSIZE/WSIZE);
+  mm_free(ptr);
   
   print_heap();
 
@@ -239,8 +241,8 @@ static void *find_bucket(size_t words) {
 }
 
 /*
- * find_fit - checks first node (biggest) inside a given bucket
- *            returns pointer to free list
+ * find_fit - checks first fit inside a given bucket
+ *            returns pointer to free block
  *            2 possible algorithms:
  *            I  Linked list is ranked starting largest
  *            II First-fit which could be slow for large requests
@@ -262,30 +264,38 @@ static void *find_fit(size_t words) {
 }
 
 /*
- * mm_free - Freeing a block does nothing.
+ * mm_free
  */
 void mm_free(void *ptr)
 {
+  size_t size = GET_SIZE(HDRP(ptr));
+
+  PUT(HDRP(ptr), PACK(size, 0));
+  PUT(FTRP(ptr), PACK(size, 0));
+
+  add_to_bucket(ptr, find_bucket(size / WSIZE));
+  //coalesce(bp);
 }
 
 /*
- * add_to_bucket - traverses over linked list and places block
+ * add_to_bucket - helper method for mm_free
+ *                 traverses over linked list and places block
  *                 (so that it keep order max to min)
  *
  *  ______________
  * | size | alloc |
  * |    HEADER    |
  * ----------------
- * |    *next     |  -  0x0 if end of list
+ * |    *next     |  -  0x0 if end of list   <-   node  &  <-  block_ptr
  * |              |
  * ----------------
+ * |    *prev     |  -  0x0 if start of list
  * |              |
+ * ----------------
  * |              |
  * |   PAYLOAD    |
  * |              |
- * ----------------
  * |              |
- * |   PADDING    |
  * ----------------
  * | size | alloc |  
  * |    FOOTER    |
@@ -301,19 +311,25 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
 
     // while ((node + 1) != 0x0) {
     //   node = *(node + 1);
-    // } // reached leaf node
+    // } // reached leaf node good for first firt fit algo
 
-    *(block_ptr + 1) = node;
+    //*(block_ptr + 1) = node;
+    *(node + 1) = block_ptr;
+    *block_ptr = node;
     *bucket = block_ptr;
 
   }
   printf("Bucket content: %p\n", *bucket);
 }
 
+static void remove_from_bucket() {
+
+}
+
 /*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
  * Implementation partially taken from CS:APP
- * new placement of bucket required
+ * handles rearangement of blocks
  */
 static void *coalesce(void *bp)
 {
