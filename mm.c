@@ -97,10 +97,17 @@ int main(int argc, char **argv)
   void *ptr1 = (size_t *) (heap_listp + 2*WSIZE);
   mm_free(ptr1);
 
-  void *ptr = extend_heap(CHUNKSIZE/WSIZE);
-  mm_free(ptr);
+  void *ptr2 = extend_heap(CHUNKSIZE/WSIZE);
+  mm_free(ptr2);
+  //remove_from_bucket(ptr2, find_bucket(CHUNKSIZE/WSIZE));
+
+  void *ptr3 = extend_heap(CHUNKSIZE/WSIZE);
+  mm_free(ptr3);
+
   remove_from_bucket(ptr1, find_bucket(CHUNKSIZE/WSIZE));
-  
+  remove_from_bucket(ptr2, find_bucket(CHUNKSIZE/WSIZE));
+  remove_from_bucket(ptr3, find_bucket(CHUNKSIZE/WSIZE));
+    
   print_heap();
 
   printf("%p\n", heap_listp + WSIZE);
@@ -128,15 +135,15 @@ int mm_init(void)
     heap_listp += (BUCKETS_COUNT*WSIZE);  
 
     PUT(heap_listp, 0);                          /* Alignment padding */
-    printf("Found %d at %p\n", GET(heap_listp), heap_listp);
+    //printf("Found %d at %p\n", GET(heap_listp), heap_listp);
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */ 
-    printf("Found %d at %p\n", GET(heap_listp + 1 * WSIZE), heap_listp + 1 * WSIZE);  
+    //printf("Found %d at %p\n", GET(heap_listp + 1 * WSIZE), heap_listp + 1 * WSIZE);  
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */ 
-    printf("Found %d at %p\n", GET(heap_listp + 2 * WSIZE), heap_listp + 2 * WSIZE);  
+    //printf("Found %d at %p\n", GET(heap_listp + 2 * WSIZE), heap_listp + 2 * WSIZE);  
     PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
     //printf("Found %d at %p\n", GET(heap_listp + 3 * WSIZE), heap_listp + 3 * WSIZE);  
     heap_listp += (2*WSIZE);
-    printf("Found %d at heap_listp (%p)\n", GET(heap_listp), heap_listp);  
+    //printf("Found %d at heap_listp (%p)\n", GET(heap_listp), heap_listp);  
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL) 
@@ -181,7 +188,7 @@ static void buckets_init(unsigned int buckets_count, size_t *starting_position) 
     size_t *bucket = starting_position; // initializes bucket array to start of heap
     while (buckets_count != 0) {
       *bucket = 0; // 0 means bucket is empty
-      printf("Assigned %d at %p\n", GET(bucket), bucket);
+      //printf("Assigned %d at %p\n", GET(bucket), bucket);
       bucket++;
       buckets_count--;
     }
@@ -207,7 +214,6 @@ static void *extend_heap(size_t words)
 
     /* Coalesce if the previous block was free */
     //return coalesce(bp);
-    printf("THE BLOCK POINTER;%p\n", bp);   
     return bp;                      
 }
 
@@ -306,7 +312,7 @@ void mm_free(void *ptr)
  */
 static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node = (size_t *) *bucket; // node is now address of first free block, if exists; 
-  printf("Address of head node: %d\n", node);
+  //printf("Address of head node: %d\n", node);
   
   if (node == 0x0) { // bucket empty, set bucket content to block_ptr
     *bucket = block_ptr;
@@ -323,7 +329,7 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
     *bucket = block_ptr;
 
   }
-  printf("Bucket content: %p\n", *bucket);
+  //printf("Bucket content: %p\n", *bucket);
 }
 
 /*
@@ -332,7 +338,9 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node;
   size_t *node2;
-  if (*bucket = block_ptr) { // Case 1: start of list // ERROR; this is firing when it shouldnt
+  //printf("BUCKET CONTENT: %p\n", *bucket);
+  //printf("BLOCK_PTR: %p\n", block_ptr);
+  if (*bucket == block_ptr) { // Case 1: start of list // ERROR; this is firing when it shouldnt
     *bucket = *block_ptr;
     if (*bucket != 0x0)
       node = (size_t *) *bucket;
@@ -342,7 +350,8 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
     node = *(block_ptr + 1); // node is prev
     *node = *block_ptr; // asign previous to point to next
     node2 = *node; // asigns node2 to next
-    *(node + 2) = node; // connects next to back
+    if (node2 != 0x0)
+      *(node2 + 1) = node; // connects next to back
   }
 
 }
