@@ -80,6 +80,7 @@ static void add_to_bucket(size_t *block, size_t *bucket); // largest first or no
 //static void remove_from_bucket(void *ptr);
 static void *find_bucket(size_t words);
 static void print_heap();
+static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket);
 //static void *find_fit(size_t words);
 // static void *find_fit(size_t asize);
 
@@ -93,10 +94,12 @@ int main(int argc, char **argv)
   mem_init();
   mm_init();
 
-  mm_free((size_t *) (heap_listp + 2*WSIZE));
+  void *ptr1 = (size_t *) (heap_listp + 2*WSIZE);
+  mm_free(ptr1);
 
   void *ptr = extend_heap(CHUNKSIZE/WSIZE);
   mm_free(ptr);
+  remove_from_bucket(ptr1, find_bucket(CHUNKSIZE/WSIZE));
   
   print_heap();
 
@@ -307,6 +310,7 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   
   if (node == 0x0) { // bucket empty, set bucket content to block_ptr
     *bucket = block_ptr;
+    //*(block_ptr + 1) = bucket;
   } else { // else, bucket has blocks already, place at beginning
 
     // while ((node + 1) != 0x0) {
@@ -322,7 +326,24 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   printf("Bucket content: %p\n", *bucket);
 }
 
-static void remove_from_bucket() {
+/*
+ * remove_from_bucket - helper method that removes and returns free block from bucket
+ */
+static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
+  size_t *node;
+  size_t *node2;
+  if (*bucket = block_ptr) { // Case 1: start of list // ERROR; this is firing when it shouldnt
+    *bucket = *block_ptr;
+    if (*bucket != 0x0)
+      node = (size_t *) *bucket;
+      *(node + 1) = 0x0;
+
+  } else { // Case 2: all other cases
+    node = *(block_ptr + 1); // node is prev
+    *node = *block_ptr; // asign previous to point to next
+    node2 = *node; // asigns node2 to next
+    *(node + 2) = node; // connects next to back
+  }
 
 }
 
