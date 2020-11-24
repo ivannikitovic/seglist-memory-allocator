@@ -41,9 +41,10 @@ team_t team = {
 
 #define WSIZE       4       /* Word and header/footer size (bytes) */ 
 #define DSIZE       8       /* Double word size (bytes) */
-#define CHUNKSIZE  (1<<6)  /* Extend heap by this amount (bytes) */ // CHANGE TO 12
+#define CHUNKSIZE  (1<<6)  /* Extend heap by this amount (bytes) */
 
 #define BUCKETS_COUNT 32
+#define OVERHEAD 32
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -83,6 +84,7 @@ static void print_heap();
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket);
 static size_t *remove_from_seglist(size_t *ptr);
 static void *find_fit(size_t words);
+static void place(void *bp, size_t size);
 
 static char *heap_listp = 0;
 
@@ -93,10 +95,17 @@ int main(int argc, char **argv)
   mem_init();
   mm_init();
 
-  printf("FIT FOUND: %p\n", find_fit(13));
+  //printf("FIT FOUND: %p\n", find_fit(13));
 
-  void *ptr1 = extend_heap(CHUNKSIZE/WSIZE);
-  printf("FIT FOUND: %p\n", find_fit(13));
+  //void *ptr1 = extend_heap(CHUNKSIZE/WSIZE);
+  //printf("FIT FOUND: %p\n", find_fit(13));
+  void *ptr1 = mm_malloc(2040);
+  void *ptr2 = mm_malloc(2040);
+  mm_free(ptr2);
+  //mm_free(ptr1);
+  void *ptr3 = mm_malloc(9);
+  mm_free(ptr3);
+  //void *ptr4 = mm_malloc(20);
 
   //mm_free(ptr1);
 
@@ -113,7 +122,7 @@ int main(int argc, char **argv)
   //remove_from_seglist(ptr2);
   //remove_from_seglist(ptr3);
     
-  print_heap();
+ // print_heap();
 
   printf("%p\n", heap_listp + WSIZE);
   //printf("mm_malloc=%p\n", mm_malloc(4088));
@@ -126,7 +135,7 @@ int main(int argc, char **argv)
  * Implementation partially taken from CS:APP
  */
 int mm_init(void)
-{
+{ 
     // printf("Initializing heap starting at: %p\n", extend_heap(32));
     printf("Heap initialized at: %p\n", mem_heap_lo());
     
@@ -223,21 +232,66 @@ static void *extend_heap(size_t words)
 }
 
 /* 
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
+ * mm_malloc - Allocate a block with at least size bytes of payload 
+ *             implementation partly taken from CS:APP
  */
-void *mm_malloc(size_t size)
+void *mm_malloc(size_t size) 
 {
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    PUT(p + SIZE_T_SIZE, PACK(newsize, 1));
-    if (p == (void *)-1)
-	    return NULL;
+    printf("newsize: %d\n", ALIGN(size + OVERHEAD));
+    size_t newsize = ALIGN(size + OVERHEAD);      /* Adjusted block size in bytes */
+    size_t extendsize; /* Amount to extend heap if no fit */
+    char *bp;      
+
+    if (heap_listp == 0) {
+        mm_init();
+    }
+
+    /* Ignore spurious requests */
+    if (size == 0)
+        return NULL;
+
+    /* Search the free list for a fit */
+    if ((bp = find_fit(newsize / WSIZE)) != NULL) {
+        place(bp, newsize);
+        return bp;
+    }
+
+    /* No fit found. Get more memory and place the block */
+    extendsize = MAX(newsize,CHUNKSIZE);
+    if ((bp = extend_heap(extendsize/WSIZE)) == NULL)  
+        return NULL;
+    place(bp, newsize);
+    return bp;
+}
+
+static void place(void *bp, size_t size)
+{
+    size_t csize = GET_SIZE(HDRP(bp));   
+
+    if ((csize - size) >= (2*DSIZE)) { 
+        remove_from_seglist(bp);
+        PUT(HDRP(bp), PACK(size, 1));
+        PUT(FTRP(bp), PACK(size, 1));
+        bp = NEXT_BLKP(bp);
+
+        //printf("%p\n", *HDRP(NEXT_BLKP(bp)));
+
+        PUT(HDRP(bp), PACK(csize-size, 0));
+        PUT(FTRP(bp), PACK(csize-size, 0));
+        add_to_seglist(bp);
+    }
     else {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
+        remove_from_seglist(bp); 
+        PUT(HDRP(bp), PACK(csize, 1));
+        PUT(FTRP(bp), PACK(csize, 1));
     }
 }
+// { // size is in bytes
+//   remove_from_seglist(bp);
+//   PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+//   PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+// }
+
 /*
  * find_bucket - iterates over buckets array to find smallest bucket
  */
@@ -264,7 +318,8 @@ static void *find_bucket(size_t words) {
  */
 static void *find_fit(size_t words) {
   size_t *node;
-  size_t newsize = words + 4; // payload + padding + header + footer, in words
+  //size_t newsize = words + OVERHEAD / WSIZE; // adjusts for payload + padding + header + footer, in words
+  size_t newsize = words;
   size_t *bucket = (size_t *) find_bucket(newsize);
   while (bucket < (size_t *) mem_heap_lo() + BUCKETS_COUNT) {
     node = *bucket;
@@ -341,6 +396,7 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
 }
 
 static void add_to_seglist(size_t *ptr) {
+  //printf("Adding to seglist");
   size_t size = GET_SIZE(HDRP(ptr));
   add_to_bucket(ptr, find_bucket(size / WSIZE));
 }
@@ -356,8 +412,12 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   if (*bucket == block_ptr) { // Case 1: start of list // ERROR; this is firing when it shouldnt
     *bucket = *block_ptr;
     if (*bucket != 0x0)
-      node = (size_t *) *bucket;
-      *(node + 1) = 0x0;
+      node =  *bucket;
+      if (node != 0x0) {
+        //print_heap();
+        //printf("%p\n", mem_heap_lo());
+        *(node + 1) = 0x0;
+      }
 
   } else { // Case 2: all other cases
     node = *(block_ptr + 1); // node is prev
@@ -372,7 +432,9 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
 }
 
 static size_t *remove_from_seglist(size_t *ptr) {
+  //printf("Removing %p from seglist...\n", ptr);
   size_t size = GET_SIZE(HDRP(ptr));
+  //print_heap();
   remove_from_bucket(ptr, find_bucket(size / WSIZE));
 }
 
