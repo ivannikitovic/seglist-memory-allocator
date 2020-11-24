@@ -253,7 +253,7 @@ void *mm_malloc(size_t size)
     /* Search the free list for a fit */
     if ((bp = find_fit(newsize / WSIZE)) != NULL) {
         place(bp, newsize);
-        return bp;
+        return bp + 8;
     }
 
     /* No fit found. Get more memory and place the block */
@@ -261,7 +261,7 @@ void *mm_malloc(size_t size)
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)  
         return NULL;
     place(bp, newsize);
-    return bp;
+    return bp + 8;
 }
 
 static void place(void *bp, size_t size)
@@ -278,6 +278,8 @@ static void place(void *bp, size_t size)
 
         PUT(HDRP(bp), PACK(csize-size, 0));
         PUT(FTRP(bp), PACK(csize-size, 0));
+        PUT(bp, 0);
+        PUT(bp + 1, 0);
         add_to_seglist(bp);
     }
     else {
@@ -344,6 +346,7 @@ static void *find_fit(size_t words) {
  */
 void mm_free(void *ptr)
 {
+  ptr = ptr - 8;
   size_t size = GET_SIZE(HDRP(ptr));
 
   PUT(HDRP(ptr), PACK(size, 0));
