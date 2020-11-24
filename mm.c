@@ -82,7 +82,7 @@ static void add_to_seglist(size_t *ptr);
 static void *find_bucket(size_t words);
 static void print_heap();
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket);
-static size_t *remove_from_seglist(size_t *ptr);
+static void remove_from_seglist(size_t *ptr);
 static void *find_fit(size_t words);
 static void place(void *bp, size_t size);
 
@@ -399,8 +399,12 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
 }
 
 static void add_to_seglist(size_t *ptr) {
-  //printf("Adding to seglist");
   size_t size = GET_SIZE(HDRP(ptr));
+  // printf("\n");
+  // printf("adding %p\n", ptr);
+  // printf("size: %d\n", size);
+  // printf("bucket: %p\n", find_bucket(size / WSIZE));
+  // printf("\n");
   add_to_bucket(ptr, find_bucket(size / WSIZE));
 }
 
@@ -426,18 +430,22 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
     node = *(block_ptr + 1); // node is prev
     if (node != 0x0) {
       *node = *block_ptr; // asign previous to point to next
-      node2 = *node; // asigns node2 to next
     }
+    node2 = *node; // asigns node2 to next
     if (node2 != 0x0)
       *(node2 + 1) = node; // connects next to back
   }
 
 }
 
-static size_t *remove_from_seglist(size_t *ptr) {
+static void remove_from_seglist(size_t *ptr) {
   //printf("Removing %p from seglist...\n", ptr);
   size_t size = GET_SIZE(HDRP(ptr));
-  //print_heap();
+  // printf("\n");
+  // printf("removing %p\n", ptr);
+  // printf("size: %d\n", size);
+  // printf("bucket: %p\n", find_bucket(size / WSIZE));
+  // printf("\n");
   remove_from_bucket(ptr, find_bucket(size / WSIZE));
 }
 
