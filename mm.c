@@ -41,7 +41,7 @@ team_t team = {
 
 #define WSIZE       4       /* Word and header/footer size (bytes) */ 
 #define DSIZE       8       /* Double word size (bytes) */
-#define CHUNKSIZE  (1<<6)  /* Extend heap by this amount (bytes) */
+#define CHUNKSIZE  (1<<12)  /* Extend heap by this amount (bytes) */
 
 #define BUCKETS_COUNT 32
 #define OVERHEAD 32
@@ -506,22 +506,23 @@ static void *coalesce(void *bp)
 }
 
 /*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
+ * mm_realloc - Naive implementation of realloc
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
+    size_t oldsize;
     void *newptr;
-    size_t copySize;
-    
+
     newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
+
+    /* Copy the old data. */
+    oldsize = GET_SIZE(HDRP(ptr - 8));
+    if(size < oldsize) oldsize = size;
+    memcpy(newptr, ptr, oldsize);
+
+    /* Free the old block. */
+    mm_free(ptr);
+
     return newptr;
 }
 
