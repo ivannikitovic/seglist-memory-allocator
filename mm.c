@@ -138,7 +138,7 @@ int main(int argc, char **argv)
 int mm_init(void)
 { 
     // printf("Initializing heap starting at: %p\n", extend_heap(32));
-    printf("Heap initialized at: %p\n", mem_heap_lo());
+    //printf("Heap initialized at: %p\n", mem_heap_lo());
     
     // printf("Heap size: %d bytes\n", mem_heapsize());
     // printf("Checking heap size... %s\n", (mem_heapsize() == 32 * WSIZE) ? "PASS" : "FAIL");
@@ -238,7 +238,7 @@ static void *extend_heap(size_t words)
  */
 void *mm_malloc(size_t size) 
 {
-    printf("newsize: %d\n", ALIGN(size + OVERHEAD));
+    //printf("newsize: %d\n", ALIGN(size + OVERHEAD));
     size_t newsize = ALIGN(size + OVERHEAD);      /* Adjusted block size in bytes */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;      
@@ -348,7 +348,6 @@ static void *find_fit(size_t words) {
 void mm_free(void *ptr)
 {
   ptr = ptr - 8;
-  printf("%p\n", ptr);
   size_t size = GET_SIZE(HDRP(ptr));
 
   PUT(HDRP(ptr), PACK(size, 0));
@@ -385,9 +384,8 @@ void mm_free(void *ptr)
 static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node =  *bucket; // node is now address of first free block, if exists; 
   //printf("Address of head node: %d\n", node);
-  if (block_ptr == 0xf6a7e2e8 && bucket == 0xf69dc03c) {
-    print_seglist();
-  }
+  *(block_ptr) = 0x0;
+  *(block_ptr + 1) = 0x0;
   if (node == 0x0) { // bucket empty, set bucket content to block_ptr
     *bucket = block_ptr;
     //*(block_ptr + 1) = bucket;
@@ -425,7 +423,7 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   if (*bucket == block_ptr) { // Case 1: start of list // ERROR; this is firing when it shouldnt
     *bucket = *block_ptr;
     node = *block_ptr;
-    if (node != 0) {
+    if (node != 0x0) {
         *(node + 1) = 0x0;
       }
 
