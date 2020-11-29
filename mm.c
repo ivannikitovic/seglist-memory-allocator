@@ -85,6 +85,7 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket);
 static void remove_from_seglist(size_t *ptr);
 static void *find_fit(size_t words);
 static void place(void *bp, size_t size);
+static void print_seglist();
 
 static char *heap_listp = 0;
 
@@ -99,15 +100,15 @@ int main(int argc, char **argv)
 
   //void *ptr1 = extend_heap(CHUNKSIZE/WSIZE);
   //printf("FIT FOUND: %p\n", find_fit(13));
-  void *ptr1 = mm_malloc(2040);
-  void *ptr2 = mm_malloc(2040);
+  void *ptr1 = mm_malloc(40);
+  void *ptr2 = mm_malloc(40);
+  void *ptr3 = mm_malloc(40);
+  //print_heap();
+  mm_free(ptr1);
+  //print_heap();
   mm_free(ptr2);
-  //mm_free(ptr1);
-  void *ptr3 = mm_malloc(9);
-  mm_free(ptr3);
-  //void *ptr4 = mm_malloc(20);
-
-  //mm_free(ptr1);
+  print_heap();
+  printf("%p\n", ptr3);
 
   //void *ptr2 = extend_heap(CHUNKSIZE/WSIZE);
 
@@ -122,7 +123,7 @@ int main(int argc, char **argv)
   //remove_from_seglist(ptr2);
   //remove_from_seglist(ptr3);
     
- // print_heap();
+  print_heap();
 
   printf("%p\n", heap_listp + WSIZE);
   //printf("mm_malloc=%p\n", mm_malloc(4088));
@@ -330,7 +331,7 @@ static void *find_fit(size_t words) {
       // printf("newsize: %d\n", newsize);
       // printf("node: %p\n", node);
       // printf("getsize: %d\n", GET_SIZE(HDRP(node)));
-      if (newsize <= GET_SIZE(HDRP(node))) {
+      if (newsize * WSIZE <= GET_SIZE(HDRP(node))) {
         return node; // no splitting done, splitting could either here or helper function
       }
       node = *node;
@@ -347,6 +348,7 @@ static void *find_fit(size_t words) {
 void mm_free(void *ptr)
 {
   ptr = ptr - 8;
+  printf("%p\n", ptr);
   size_t size = GET_SIZE(HDRP(ptr));
 
   PUT(HDRP(ptr), PACK(size, 0));
@@ -381,9 +383,11 @@ void mm_free(void *ptr)
  * ----------------
  */
 static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
-  size_t *node = (size_t *) *bucket; // node is now address of first free block, if exists; 
+  size_t *node =  *bucket; // node is now address of first free block, if exists; 
   //printf("Address of head node: %d\n", node);
-  
+  if (block_ptr == 0xf6a7e2e8 && bucket == 0xf69dc03c) {
+    print_seglist();
+  }
   if (node == 0x0) { // bucket empty, set bucket content to block_ptr
     *bucket = block_ptr;
     //*(block_ptr + 1) = bucket;
@@ -395,14 +399,13 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
     *bucket = block_ptr;
 
   }
-  //printf("Bucket content: %p\n", *bucket);
 }
 
 static void add_to_seglist(size_t *ptr) {
   size_t size = GET_SIZE(HDRP(ptr));
   // printf("\n");
-  // printf("adding %p\n", ptr);
-  // printf("size: %d\n", size);
+  // printf("adding %p, ", ptr);
+  // printf("size: %d, to ", size);
   // printf("bucket: %p\n", find_bucket(size / WSIZE));
   // printf("\n");
   add_to_bucket(ptr, find_bucket(size / WSIZE));
@@ -414,15 +417,15 @@ static void add_to_seglist(size_t *ptr) {
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node;
   size_t *node2;
+  // if (block_ptr == 0xf6a7e2e8) {
+  //   print_seglist();
+  // }
   //printf("BUCKET CONTENT: %p\n", *bucket);
   //printf("BLOCK_PTR: %p\n", block_ptr);
   if (*bucket == block_ptr) { // Case 1: start of list // ERROR; this is firing when it shouldnt
     *bucket = *block_ptr;
-    if (*bucket != 0x0)
-      node =  *bucket;
-      if (node != 0x0) {
-        //print_heap();
-        //printf("%p\n", mem_heap_lo());
+    node = *block_ptr;
+    if (node != 0) {
         *(node + 1) = 0x0;
       }
 
@@ -442,10 +445,11 @@ static void remove_from_seglist(size_t *ptr) {
   //printf("Removing %p from seglist...\n", ptr);
   size_t size = GET_SIZE(HDRP(ptr));
   // printf("\n");
-  // printf("removing %p\n", ptr);
-  // printf("size: %d\n", size);
+  // printf("removing %p, ", ptr);
+  // printf("size: %d, from ", size);
   // printf("bucket: %p\n", find_bucket(size / WSIZE));
-  // printf("\n");
+  //printf("size/WSIZE: %d\n", size / WSIZE);
+  //printf("find_bucket: %p\n", find_bucket(size / WSIZE));
   remove_from_bucket(ptr, find_bucket(size / WSIZE));
 }
 
@@ -524,7 +528,15 @@ void *mm_realloc(void *ptr, size_t size)
 }
 
 
-
+static void print_seglist() {
+  size_t *current_word = mem_heap_lo();
+  while (current_word <= (size_t *) mem_heap_lo() + BUCKETS_COUNT) {
+    printf("             --------------\n");
+    printf("%p  |  0x%x\n", current_word, *current_word);
+    printf("             --------------\n");
+    current_word++;
+  }
+}
 
 
 
