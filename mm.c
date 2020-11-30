@@ -81,7 +81,7 @@ static void add_to_bucket(size_t *block, size_t *bucket);
 static void add_to_seglist(size_t *ptr);
 static void *find_bucket(size_t words);
 static void print_heap();
-static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket);
+static void remove_from_bucket(size_t *block_ptr, size_t *bucket);
 static void remove_from_seglist(size_t *ptr);
 static void *find_fit(size_t words);
 static void place(void *bp, size_t size);
@@ -89,6 +89,9 @@ static void print_seglist();
 
 static char *heap_listp = 0;
 
+/*
+ * main - used to test mm.c manually
+ */
 // gcc -D MY_MMTEST -Wall -g -m32 mm.c memlib.c -o mymem
 #ifdef MY_MMTEST
 int main(int argc, char **argv)
@@ -96,37 +99,15 @@ int main(int argc, char **argv)
   mem_init();
   mm_init();
 
-  //printf("FIT FOUND: %p\n", find_fit(13));
-
-  //void *ptr1 = extend_heap(CHUNKSIZE/WSIZE);
-  //printf("FIT FOUND: %p\n", find_fit(13));
   void *ptr1 = mm_malloc(40);
   void *ptr2 = mm_malloc(40);
   void *ptr3 = mm_malloc(40);
-  //print_heap();
   mm_free(ptr1);
-  //print_heap();
   mm_free(ptr2);
+  mm_free(ptr3);
   print_heap();
-  printf("%p\n", ptr3);
-
-  //void *ptr2 = extend_heap(CHUNKSIZE/WSIZE);
-
-  //mm_free(ptr2);
-  //remove_from_bucket(ptr2, find_bucket(CHUNKSIZE/WSIZE));
-
-  //void *ptr3 = extend_heap(CHUNKSIZE/WSIZE);
-
-  //mm_free(ptr3);
-
-  //remove_from_seglist(ptr1);
-  //remove_from_seglist(ptr2);
-  //remove_from_seglist(ptr3);
     
   print_heap();
-
-  printf("%p\n", heap_listp + WSIZE);
-  //printf("mm_malloc=%p\n", mm_malloc(4088));
   return 0;
 }
 #endif
@@ -135,14 +116,7 @@ int main(int argc, char **argv)
  * mm_init - initialize the malloc package.
  * Implementation partially taken from CS:APP
  */
-int mm_init(void)
-{ 
-    // printf("Initializing heap starting at: %p\n", extend_heap(32));
-    //printf("Heap initialized at: %p\n", mem_heap_lo());
-    
-    // printf("Heap size: %d bytes\n", mem_heapsize());
-    // printf("Checking heap size... %s\n", (mem_heapsize() == 32 * WSIZE) ? "PASS" : "FAIL");
-
+int mm_init(void) { 
     /* Create the initial empty heap */
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1) //line:vm:mm:begininit
         return -1;
@@ -150,31 +124,16 @@ int mm_init(void)
     heap_listp += (BUCKETS_COUNT*WSIZE);  
 
     PUT(heap_listp, 0);                          /* Alignment padding */
-    //printf("Found %d at %p\n", GET(heap_listp), heap_listp);
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */ 
-    //printf("Found %d at %p\n", GET(heap_listp + 1 * WSIZE), heap_listp + 1 * WSIZE);  
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */ 
-    //printf("Found %d at %p\n", GET(heap_listp + 2 * WSIZE), heap_listp + 2 * WSIZE);  
     PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
-    //printf("Found %d at %p\n", GET(heap_listp + 3 * WSIZE), heap_listp + 3 * WSIZE);  
     heap_listp += (2*WSIZE);
-    //printf("Found %d at heap_listp (%p)\n", GET(heap_listp), heap_listp);  
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL) 
         return -1;
 
     return 0;
-}
-
-static void print_heap() {
-  size_t *current_word = mem_heap_lo();
-  while (current_word <= mem_heap_hi()) {
-    printf("             --------------\n");
-    printf("%p  |  0x%x\n", current_word, *current_word);
-    printf("             --------------\n");
-    current_word++;
-  }
 }
 
 /*
@@ -191,26 +150,24 @@ static void print_heap() {
  *
  * IMPORTANT NOTE: the bucket ranges are in total free bytes,
  *                 to find a fit for payload size x:
- *                 BUCKET.LOW <= x + 4 <= BUCKET.HIGH
+ *                 BUCKET.LOW <= x + 4*WSIZE <= BUCKET.HIGH
  *                 the 4 represent header, footer, next, and padding of allocated block
  */
 static void buckets_init(unsigned int buckets_count, size_t *starting_position) {
     mem_sbrk(WSIZE * BUCKETS_COUNT); // makes room for buckets
-    //buckets_count += ALIGNMENT - buckets_count % ALIGNMENT; // aligns buckets to keep alignment of heap
-    // printf("Classes required: %d\n", buckets_count);
 
     // initialize bucket array
     size_t *bucket = starting_position; // initializes bucket array to start of heap
     while (buckets_count != 0) {
       *bucket = 0; // 0 means bucket is empty
-      //printf("Assigned %d at %p\n", GET(bucket), bucket);
-      bucket++;
+      bucket++; // increment current bucket
       buckets_count--;
     }
 }
 
 /* 
  * extend_heap - Extend heap with free block and return its block pointer
+ *               implementation partly taken from CS:APP
  */
 static void *extend_heap(size_t words) 
 {
@@ -228,18 +185,15 @@ static void *extend_heap(size_t words)
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /* New epilogue header */ 
 
     /* Coalesce if the previous block was free */
-    return coalesce(bp);
-    //return bp;                      
+    return coalesce(bp);                     
 }
 
 /* 
  * mm_malloc - Allocate a block with at least size bytes of payload 
  *             implementation partly taken from CS:APP
  */
-void *mm_malloc(size_t size) 
-{
-    //printf("newsize: %d\n", ALIGN(size + OVERHEAD));
-    size_t newsize = ALIGN(size + OVERHEAD);      /* Adjusted block size in bytes */
+void *mm_malloc(size_t size) {
+    size_t newsize = ALIGN(size + OVERHEAD); /* Adjusted block size in bytes */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;      
 
@@ -254,7 +208,7 @@ void *mm_malloc(size_t size)
     /* Search the free list for a fit */
     if ((bp = find_fit(newsize / WSIZE)) != NULL) {
         place(bp, newsize);
-        return bp + 8;
+        return bp + DSIZE;
     }
 
     /* No fit found. Get more memory and place the block */
@@ -262,84 +216,66 @@ void *mm_malloc(size_t size)
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)  
         return NULL;
     place(bp, newsize);
-    return bp + 8;
+    return bp + DSIZE;
 }
 
+/*
+ * place - handles splitting and block placement
+ */
 static void place(void *bp, size_t size)
 {
-    size_t csize = GET_SIZE(HDRP(bp));   
+    size_t csize = GET_SIZE(HDRP(bp));  // get size  
 
-    if ((csize - size) >= (2*DSIZE)) { 
-        remove_from_seglist(bp);
-        PUT(HDRP(bp), PACK(size, 1));
-        PUT(FTRP(bp), PACK(size, 1));
+    if ((csize - size) >= (4*DSIZE)) { // if possible, split block
+        remove_from_seglist(bp); // remove current block
+        PUT(HDRP(bp), PACK(size, 1)); // allocate bit
+        PUT(FTRP(bp), PACK(size, 1)); // allocate bit
         bp = NEXT_BLKP(bp);
 
-        //printf("%p\n", *HDRP(NEXT_BLKP(bp)));
-
-        PUT(HDRP(bp), PACK(csize-size, 0));
-        PUT(FTRP(bp), PACK(csize-size, 0));
-        PUT(bp, 0);
-        PUT(bp + 1, 0);
-        add_to_seglist(bp);
+        PUT(HDRP(bp), PACK(csize-size, 0)); // free other chunk
+        PUT(FTRP(bp), PACK(csize-size, 0)); // free other chunk
+        add_to_seglist(bp); // add to seglist
     }
     else {
-        remove_from_seglist(bp); 
-        PUT(HDRP(bp), PACK(csize, 1));
-        PUT(FTRP(bp), PACK(csize, 1));
+        remove_from_seglist(bp); // no splitting, just remove
+        PUT(HDRP(bp), PACK(csize, 1)); // allocate bit
+        PUT(FTRP(bp), PACK(csize, 1)); // allocate bit
     }
 }
-// { // size is in bytes
-//   remove_from_seglist(bp);
-//   PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-//   PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-// }
 
 /*
  * find_bucket - iterates over buckets array to find smallest bucket
  */
 static void *find_bucket(size_t words) {
-  // size_t newsize = ALIGN(words + SIZE_T_SIZE);
-  // printf("Looking for size %d...\n", newsize);
-  int k;
-  for (k = 0; k < BUCKETS_COUNT; k++) {
-    if (words * WSIZE <= (1 << k)) {
-      // printf("k found: %d (%p)\n", k, (int *) mem_heap_lo() + k);
-      return (size_t *) mem_heap_lo() + k;
+  int k; // counter value
+  for (k = 0; k < BUCKETS_COUNT; k++) { // iterates over seglist
+    if (words * WSIZE <= (1 << k)) { // uses shifts to get 2^k and checks size
+      return (size_t *) mem_heap_lo() + k; // return address of bucket if possible
     }
   }
-  return 0;
+  return 0; // otherwise, return 0
 }
 
 /*
  * find_fit - checks first fit inside a given bucket
  *            returns pointer to free block
- *            2 possible algorithms:
- *            I  Linked list is ranked starting largest
- *            II First-fit which could be slow for large requests
- *            *  Splitting optional, would decrease internal fragmentation
  */
 static void *find_fit(size_t words) {
   size_t *node;
-  //size_t newsize = words + OVERHEAD / WSIZE; // adjusts for payload + padding + header + footer, in words
   size_t newsize = words;
-  size_t *bucket = (size_t *) find_bucket(newsize);
-  while (bucket < (size_t *) mem_heap_lo() + BUCKETS_COUNT) {
-    node = *bucket;
+  size_t *bucket = (size_t *) find_bucket(newsize); // finds bucket for placement
+  while (bucket < (size_t *) mem_heap_lo() + BUCKETS_COUNT) { // iterates over seglist if no bucket fits
+    node = GET(bucket);
 
-    while (node != 0x0) {
-      // printf("newsize: %d\n", newsize);
-      // printf("node: %p\n", node);
-      // printf("getsize: %d\n", GET_SIZE(HDRP(node)));
-      if (newsize * WSIZE <= GET_SIZE(HDRP(node))) {
-        return node; // no splitting done, splitting could either here or helper function
-      }
-      node = *node;
+    while (node != 0x0) { // iterates over linked list
+      if (newsize * WSIZE <= GET_SIZE(HDRP(node))) // if fit found, return
+        return node;
+      node = GET(node);
     };
     
-    bucket++;
+    bucket++; // increment bucket
   }
-  return 0; // no fit found
+  return 0; // no fit found, return 0
 }
 
 /*
@@ -347,13 +283,13 @@ static void *find_fit(size_t words) {
  */
 void mm_free(void *ptr)
 {
-  ptr = ptr - DSIZE;
-  size_t size = GET_SIZE(HDRP(ptr));
+  ptr = ptr - DSIZE; // aligns pointer
+  size_t size = GET_SIZE(HDRP(ptr)); // gets size of block
 
-  PUT(HDRP(ptr), PACK(size, 0));
-  PUT(FTRP(ptr), PACK(size, 0));
+  PUT(HDRP(ptr), PACK(size, 0)); // zero out alloc bit
+  PUT(FTRP(ptr), PACK(size, 0)); // zero out alloc bit
 
-  coalesce(ptr);
+  coalesce(ptr); // coalesce block if possible
 }
 
 /*
@@ -401,15 +337,15 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
  *
  */
 static void add_to_seglist(size_t *ptr) {
-  size_t size = GET_SIZE(HDRP(ptr));
-  add_to_bucket(ptr, find_bucket(size / WSIZE));
+  size_t size = GET_SIZE(HDRP(ptr)); // get size of block
+  add_to_bucket(ptr, find_bucket(size / WSIZE)); // add block to bucket
 }
 
 /*
  * remove_from_bucket - helper method that removes and returns free block from bucket
  *                      modifies the linked list
  */
-static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
+static void remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node;
   size_t *node2;
   if (*bucket == block_ptr) { // CASE 1: start of list
@@ -446,8 +382,7 @@ static void remove_from_seglist(size_t *ptr) {
  *            Implementation partially taken from CS:APP
  *            removes free blocks from lists as it coalesces
  */
-static void *coalesce(void *bp)
-{
+static void *coalesce(void *bp) {
 	size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp))); 
 	size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp))); 
 	size_t size = GET_SIZE(HDRP(bp));
@@ -502,8 +437,7 @@ static void *coalesce(void *bp)
  * mm_realloc - Simple implementation of realloc
  *              using mm_malloc and mm_free
  */
-void *mm_realloc(void *ptr, size_t size)
-{
+void *mm_realloc(void *ptr, size_t size) {
     size_t oldsize; // current block size
     void *newptr; // new block
 
@@ -530,5 +464,18 @@ static void print_seglist() {
     printf("%p  |  0x%x\n", current_word, *current_word); // prints address and content
     printf("             --------------\n"); // lower border
     current_word++; // increments address
+  }
+}
+
+/*
+ * print_heap - prints entire heap
+ */
+static void print_heap() {
+  size_t *current_word = mem_heap_lo();
+  while (current_word <= mem_heap_hi()) {
+    printf("             --------------\n"); // upper border
+    printf("%p  |  0x%x\n", current_word, *current_word);
+    printf("             --------------\n"); // lower border
+    current_word++;
   }
 }
