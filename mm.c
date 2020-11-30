@@ -1,13 +1,11 @@
 /*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
+ * mm.c - Efficient malloc package implemented using seglists.
  * 
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free.
+ * My solution ended up being a seglist created on the beginning of the heap.
+ * The seglist elements hold nodes to unordered linked lists of free blocks.
+ * Splitting is done in the function place, and coalescing is done in coalesce.
+ * A further challenge would be to implement a buddy system or an ordered list.
  *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,15 +75,15 @@ team_t team = {
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void buckets_init(unsigned int buckets_count, size_t *starting_position);
-static void add_to_bucket(size_t *block, size_t *bucket);
-static void add_to_seglist(size_t *ptr);
 static void *find_bucket(size_t words);
-static void print_heap();
-static void remove_from_bucket(size_t *block_ptr, size_t *bucket);
-static void remove_from_seglist(size_t *ptr);
 static void *find_fit(size_t words);
 static void place(void *bp, size_t size);
-static void print_seglist();
+static void add_to_bucket(size_t *block, size_t *bucket);
+static void add_to_seglist(size_t *ptr);
+static void remove_from_bucket(size_t *block_ptr, size_t *bucket);
+static void remove_from_seglist(size_t *ptr);
+static void print_seglist(void);
+static void print_heap(void);
 
 static char *heap_listp = 0;
 
@@ -105,8 +103,8 @@ int main(int argc, char **argv)
   mm_free(ptr1);
   mm_free(ptr2);
   mm_free(ptr3);
-  print_heap();
-    
+
+  mm_check();
   print_heap();
   return 0;
 }
@@ -270,8 +268,8 @@ static void *find_fit(size_t words) {
     while (node != 0x0) { // iterates over linked list
       if (newsize * WSIZE <= GET_SIZE(HDRP(node))) // if fit found, return
         return node;
-      node = GET(node);
-    };
+      node = GET(node); // next node
+    }
     
     bucket++; // increment bucket
   }
@@ -350,7 +348,7 @@ static void remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node2;
   if (*bucket == block_ptr) { // CASE 1: start of list
     PUT(bucket, GET(block_ptr)); // set bucket to block
-    PUT(node, GET(block_ptr)); // node is next of block
+    node = GET(block_ptr); // node is next of block
     if (node != 0x0) { // if not 0, block has a next
         *(node + 1) = 0x0; // set node prev to 0
       }
@@ -438,15 +436,26 @@ static void *coalesce(void *bp) {
  *              using mm_malloc and mm_free
  */
 void *mm_realloc(void *ptr, size_t size) {
-    size_t oldsize; // current block size
+    size_t csize; // current block size
     void *newptr; // new block
+
+    // if ptr is NULL, the call is equivalent to mm_malloc(size)
+    if(ptr == NULL) {
+        return mm_malloc(size);
+    }
+
+    // if size is equal to zero, the call is equivalent to mm free(ptr)
+    if(size == 0) {
+        mm_free(ptr);
+        return 0;
+    }
 
     newptr = mm_malloc(size); // create new block with size size
 
-    oldsize = GET_SIZE(HDRP(ptr - DSIZE)); // locates header and finds size
-    if(size < oldsize) // if requested size is less than current size take max
-      oldsize = size;
-    memcpy(newptr, ptr, oldsize); // copy the data from old to new block
+    csize = GET_SIZE(HDRP(ptr - DSIZE)); // locates header and finds size
+    if(size < csize) // if requested size is less than current size take max
+      csize = size;
+    memcpy(newptr, ptr, csize); // copy the data from old to new block
 
     mm_free(ptr); // free the old block
 
@@ -457,7 +466,7 @@ void *mm_realloc(void *ptr, size_t size) {
  * print_seglist - prints the current seglist
  *                 by looping over seglist
  */
-static void print_seglist() {
+static void print_seglist(void) {
   size_t *current_word = mem_heap_lo(); // initializes current_word at heap start
   while (current_word <= (size_t *) mem_heap_lo() + BUCKETS_COUNT) { // loops over seglist
     printf("             --------------\n"); // upper border
@@ -470,7 +479,7 @@ static void print_seglist() {
 /*
  * print_heap - prints entire heap
  */
-static void print_heap() {
+static void print_heap(void) {
   size_t *current_word = mem_heap_lo();
   while (current_word <= mem_heap_hi()) {
     printf("             --------------\n"); // upper border
@@ -478,4 +487,47 @@ static void print_heap() {
     printf("             --------------\n"); // lower border
     current_word++;
   }
+}
+
+/*
+ * mm_check - heap consistency checker
+ */
+int mm_check(void) {
+  size_t *bp;
+
+  /* 1. Checks whether headers and footer match */
+  bp = NEXT_BLKP(heap_listp);
+  while (bp <= mem_heap_hi()) {
+    if (GET(HDRP(bp)) != GET(FTRP(bp))) {
+      printf("ERROR: header and footer do not match!\n");
+      return 0;
+    }
+    bp = NEXT_BLKP(bp);
+  }
+
+  /* 2. Checks whether allocated blocks are in seglist */
+  size_t *node;
+  size_t *bucket = (size_t *) mem_heap_lo();
+  while (bucket < (size_t *) mem_heap_lo() + BUCKETS_COUNT) { // iterates over seglist
+    node = GET(bucket);
+    while (node != 0x0) { // iterates over linked list
+      if (GET_ALLOC(HDRP(node)) != 0) // if block isn't free, return error
+        printf("ERROR: allocated block in free seglist!\n");
+        return 0;
+      node = GET(node); // next node
+    }
+    bucket++; // increment bucket
+  }
+
+  /* 3. Checks if blocks escaped coalescing */
+  bp = NEXT_BLKP(heap_listp);
+  while (bp <= mem_heap_hi()) {
+    if (GET_ALLOC(HDRP(bp)) == 0 && GET_ALLOC(HDRP(NEXT_BLKP(bp))) == 0) {
+      printf("ERROR: blocks not coalesced!\n");
+      return 0;
+    }
+    bp = NEXT_BLKP(bp);
+  }
+
+  return 1; // heap is consistent
 }
