@@ -383,19 +383,14 @@ void mm_free(void *ptr)
  */
 static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node =  *bucket; // node is now address of first free block, if exists; 
-  //printf("Address of head node: %d\n", node);
-  *(block_ptr) = 0x0;
-  *(block_ptr + 1) = 0x0;
-  if (node == 0x0) { // bucket empty, set bucket content to block_ptr
-    *bucket = block_ptr;
-    //*(block_ptr + 1) = bucket;
-  } else { // else, bucket has blocks already, place at beginning
-
-    //*(block_ptr + 1) = node;
-    *(node + 1) = block_ptr;
-    *block_ptr = node;
-    *bucket = block_ptr;
-
+  PUT(block_ptr, 0x0); // clear next node address
+  PUT(block_ptr + 1, 0x0); // clear prev node address
+  if (node == 0x0) { // CASE 1: bucket empty, set bucket content to block_ptr
+    PUT(bucket, block_ptr);
+  } else { // CASE 2: else, bucket has blocks already, place at beginning
+    PUT(node + 1, block_ptr); // set prev of node to block
+    PUT(block_ptr, node); // set next of block to node
+    PUT(bucket, block_ptr); // place block in bucket
   }
 }
 
@@ -411,16 +406,12 @@ static void add_to_seglist(size_t *ptr) {
 
 /*
  * remove_from_bucket - helper method that removes and returns free block from bucket
+ *                      modifies the linked list
  */
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node;
   size_t *node2;
-  // if (block_ptr == 0xf6a7e2e8) {
-  //   print_seglist();
-  // }
-  //printf("BUCKET CONTENT: %p\n", *bucket);
-  //printf("BLOCK_PTR: %p\n", block_ptr);
-  if (*bucket == block_ptr) { // Case 1: start of list // ERROR; this is firing when it shouldnt
+  if (*bucket == block_ptr) { // Case 1: start of list
     *bucket = *block_ptr;
     node = *block_ptr;
     if (node != 0x0) {
@@ -439,22 +430,20 @@ static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
 
 }
 
+/*
+ * remove_from_seglist - container function for
+ *                       remove_from_bucket
+ *
+ */
 static void remove_from_seglist(size_t *ptr) {
-  //printf("Removing %p from seglist...\n", ptr);
-  size_t size = GET_SIZE(HDRP(ptr));
-  // printf("\n");
-  // printf("removing %p, ", ptr);
-  // printf("size: %d, from ", size);
-  // printf("bucket: %p\n", find_bucket(size / WSIZE));
-  //printf("size/WSIZE: %d\n", size / WSIZE);
-  //printf("find_bucket: %p\n", find_bucket(size / WSIZE));
-  remove_from_bucket(ptr, find_bucket(size / WSIZE));
+  size_t size = GET_SIZE(HDRP(ptr)); // get size of block
+  remove_from_bucket(ptr, find_bucket(size / WSIZE)); // remove block from bucket
 }
 
 /*
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
- * Implementation partially taken from CS:APP
- * removes free blocks from lists as it coalesces
+ *            Implementation partially taken from CS:APP
+ *            removes free blocks from lists as it coalesces
  */
 static void *coalesce(void *bp)
 {
@@ -462,88 +451,83 @@ static void *coalesce(void *bp)
 	size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp))); 
 	size_t size = GET_SIZE(HDRP(bp));
 
-	if(prev_alloc && next_alloc) {			/* Case 1 */
-    add_to_seglist(bp);
-		return bp;
+	if(prev_alloc && next_alloc) {			   /* Case 1: both alloced, 
+                                                    only add current to seglist */
+    add_to_seglist(bp); // add block to seglist
 	}
 
-	else if (prev_alloc && ! next_alloc) {		/* Case 2 */
-		size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+	else if (prev_alloc && ! next_alloc) { /* Case 2: next free, 
+                                                    coalesce and add to seglist */
+		size += GET_SIZE(HDRP(NEXT_BLKP(bp))); // increase size by next
 
-    remove_from_seglist( NEXT_BLKP(bp) );
+    remove_from_seglist( NEXT_BLKP(bp) ); // remove next block from seglist
 
-		PUT(HDRP(bp), PACK(size, 0)); 
-		PUT(FTRP(bp), PACK(size, 0));
+		PUT(HDRP(bp), PACK(size, 0)); // zero out alloc bit
+		PUT(FTRP(bp), PACK(size, 0)); // zero out alloc bit
 
-    add_to_seglist(bp);
+    add_to_seglist(bp); // add coalesced block to seglist
 	}
 
-	else if (!prev_alloc && next_alloc) {		/* Case 3 */
-		size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+	else if (!prev_alloc && next_alloc) {	 /* Case 3: prev free,
+                                                    coalesce and add to seglist */
+		size += GET_SIZE(HDRP(PREV_BLKP(bp))); // increase size by previous
 
-    remove_from_seglist( PREV_BLKP(bp) );
+    remove_from_seglist( PREV_BLKP(bp) ); // remove prev block from seglist
 
-		PUT(FTRP(bp), PACK(size, 0)); 
-		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
-		bp = PREV_BLKP(bp);
+		PUT(FTRP(bp), PACK(size, 0)); // zero out alloc bit
+		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); // zero out alloc bit
+		bp = PREV_BLKP(bp); // change block pointer to previous
 
-    add_to_seglist(bp);
+    add_to_seglist(bp); // add coalesced block to seglist
 	}
 
-	else {						/* Case 4 */ 
+	else {						                     /* Case 4: both free,
+                                                    coalesce and add to seglist */ 
 		size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp))); 
+    // increase size by previous and next
+    remove_from_seglist( NEXT_BLKP(bp) ); // remove next block from seglist
+    remove_from_seglist( PREV_BLKP(bp) ); // remove prev block from seglist
 
-    remove_from_seglist( NEXT_BLKP(bp) );
-    remove_from_seglist( PREV_BLKP(bp) );
+		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); // zero out alloc bit
+		PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0)); // zero out alloc bit
+		bp = PREV_BLKP(bp); // change block pointer to previous
 
-		PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); 
-		PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-		bp = PREV_BLKP(bp); 
-
-    add_to_seglist(bp);
+    add_to_seglist(bp); // add coalesced block to seglist
 	} 
-	return bp;
+	return bp; // return block pointer
 }
 
 /*
- * mm_realloc - Naive implementation of realloc
+ * mm_realloc - Simple implementation of realloc
+ *              using mm_malloc and mm_free
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    size_t oldsize;
-    void *newptr;
+    size_t oldsize; // current block size
+    void *newptr; // new block
 
-    newptr = mm_malloc(size);
+    newptr = mm_malloc(size); // create new block with size size
 
-    /* Copy the old data. */
-    oldsize = GET_SIZE(HDRP(ptr - 8));
-    if(size < oldsize) oldsize = size;
-    memcpy(newptr, ptr, oldsize);
+    oldsize = GET_SIZE(HDRP(ptr - 8)); // locates header and finds size
+    if(size < oldsize) // if requested size is less than current size take max
+      oldsize = size;
+    memcpy(newptr, ptr, oldsize); // copy the data from old to new block
 
-    /* Free the old block. */
-    mm_free(ptr);
+    mm_free(ptr); // free the old block
 
     return newptr;
 }
 
-
+/*
+ * print_seglist - prints the current seglist
+ *                 by looping over seglist
+ */
 static void print_seglist() {
-  size_t *current_word = mem_heap_lo();
-  while (current_word <= (size_t *) mem_heap_lo() + BUCKETS_COUNT) {
-    printf("             --------------\n");
-    printf("%p  |  0x%x\n", current_word, *current_word);
-    printf("             --------------\n");
-    current_word++;
+  size_t *current_word = mem_heap_lo(); // initializes current_word at heap start
+  while (current_word <= (size_t *) mem_heap_lo() + BUCKETS_COUNT) { // loops over seglist
+    printf("             --------------\n"); // upper border
+    printf("%p  |  0x%x\n", current_word, *current_word); // prints address and content
+    printf("             --------------\n"); // lower border
+    current_word++; // increments address
   }
 }
-
-
-
-
-
-
-
-
-
-
-
