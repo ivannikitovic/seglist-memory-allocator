@@ -343,18 +343,17 @@ static void *find_fit(size_t words) {
 }
 
 /*
- * mm_free
+ * mm_free - frees a block
  */
 void mm_free(void *ptr)
 {
-  ptr = ptr - 8;
+  ptr = ptr - DSIZE;
   size_t size = GET_SIZE(HDRP(ptr));
 
   PUT(HDRP(ptr), PACK(size, 0));
   PUT(FTRP(ptr), PACK(size, 0));
 
   coalesce(ptr);
-  //add_to_seglist(ptr);
 }
 
 /*
@@ -372,7 +371,7 @@ void mm_free(void *ptr)
  * |    *prev     |  -  0x0 if start of list
  * |              |
  * ----------------
- * |              |
+ * |              |  -  returned by malloc
  * |   PAYLOAD    |
  * |              |
  * |              |
@@ -385,8 +384,10 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node =  *bucket; // node is now address of first free block, if exists; 
   PUT(block_ptr, 0x0); // clear next node address
   PUT(block_ptr + 1, 0x0); // clear prev node address
+
   if (node == 0x0) { // CASE 1: bucket empty, set bucket content to block_ptr
     PUT(bucket, block_ptr);
+
   } else { // CASE 2: else, bucket has blocks already, place at beginning
     PUT(node + 1, block_ptr); // set prev of node to block
     PUT(block_ptr, node); // set next of block to node
@@ -394,13 +395,13 @@ static void add_to_bucket(size_t *block_ptr, size_t *bucket) {
   }
 }
 
+/*
+ * add_to_seglist - container function for
+ *                  add_to_bucket
+ *
+ */
 static void add_to_seglist(size_t *ptr) {
   size_t size = GET_SIZE(HDRP(ptr));
-  // printf("\n");
-  // printf("adding %p, ", ptr);
-  // printf("size: %d, to ", size);
-  // printf("bucket: %p\n", find_bucket(size / WSIZE));
-  // printf("\n");
   add_to_bucket(ptr, find_bucket(size / WSIZE));
 }
 
@@ -411,21 +412,21 @@ static void add_to_seglist(size_t *ptr) {
 static size_t *remove_from_bucket(size_t *block_ptr, size_t *bucket) {
   size_t *node;
   size_t *node2;
-  if (*bucket == block_ptr) { // Case 1: start of list
-    *bucket = *block_ptr;
-    node = *block_ptr;
-    if (node != 0x0) {
-        *(node + 1) = 0x0;
+  if (*bucket == block_ptr) { // CASE 1: start of list
+    PUT(bucket, GET(block_ptr)); // set bucket to block
+    PUT(node, GET(block_ptr)); // node is next of block
+    if (node != 0x0) { // if not 0, block has a next
+        *(node + 1) = 0x0; // set node prev to 0
       }
 
   } else { // Case 2: all other cases
-    node = *(block_ptr + 1); // node is prev
-    if (node != 0x0) {
-      *node = *block_ptr; // asign previous to point to next
+    node = GET(block_ptr + 1); // node is prev
+    if (node != 0x0) { // if not 0, block has a next
+      PUT(node, GET(block_ptr)); // assign previous to point to next
     }
-    node2 = *node; // asigns node2 to next
-    if (node2 != 0x0)
-      *(node2 + 1) = node; // connects next to back
+    node2 = GET(node); // assigns node2 to next
+    if (node2 != 0x0) // if not 0, block has a prev
+      PUT((node2 + 1), node); // connects next to back
   }
 
 }
@@ -508,7 +509,7 @@ void *mm_realloc(void *ptr, size_t size)
 
     newptr = mm_malloc(size); // create new block with size size
 
-    oldsize = GET_SIZE(HDRP(ptr - 8)); // locates header and finds size
+    oldsize = GET_SIZE(HDRP(ptr - DSIZE)); // locates header and finds size
     if(size < oldsize) // if requested size is less than current size take max
       oldsize = size;
     memcpy(newptr, ptr, oldsize); // copy the data from old to new block
